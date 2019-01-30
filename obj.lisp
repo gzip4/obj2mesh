@@ -32,7 +32,7 @@
 (defun parse-face (s)
   (let ((face (split-sequence:split-sequence #\Space s)))
     (when (/= 3 (length face))
-      (error "wrong faces configuration"))
+      (error "wrong faces configuration, triangles allowed only"))
     (loop for vertex in face
        collect (loop for idx in (split-sequence:split-sequence #\/ vertex)
 		    collect (parse-integer idx)))))
@@ -86,17 +86,6 @@
       (values))))
 
 
-(defun %write-plain-uint (bs data start count)
-  (declare (ignorable bs))
-  (dotimes (i count)
-    (let ((idx (* 3 (+ start i))))
-      (loop for x in (aref data (+ 0 idx)) do (format t "~8x/~f " (ieee-floats:encode-float32 x) x))
-      (loop for x in (aref data (+ 1 idx)) do (format t "~8x/~f " (ieee-floats:encode-float32 x) x))
-      (loop for x in (aref data (+ 2 idx)) do (format t "~8x/~f " (ieee-floats:encode-float32 x) x))
-      (terpri)
-      (values))))
-
-
 (defun write-obj (obj-file &key path (exporter 'write-plain-floats))
   (flet ((mesh (fn) (concatenate 'string fn ".mesh")))
     (let ((data (read-obj obj-file)))
@@ -107,9 +96,9 @@
 	 for b = (pop lst)
 	 for len = (pop lst)
 	 while fn
-	 collect (with-open-file (f (merge-pathnames (mesh fn) path)
-				    :direction :output
-				    :if-exists :overwrite
-				    :if-does-not-exist :create
-				    :element-type 'unsigned-byte)
-		   (funcall exporter f (cdr data) b len))))))
+	 do (with-open-file (f (merge-pathnames (mesh fn) path)
+			       :direction :output
+			       :if-exists :overwrite
+			       :if-does-not-exist :create
+			       :element-type 'unsigned-byte)
+	      (funcall exporter f (cdr data) b len))))))
