@@ -12,11 +12,13 @@
 
 
 (defun write-u32 (val stream)
-  (write-byte (logand #xff (ash val 0)) stream)
-  (write-byte (logand #xff (ash val -8)) stream)
-  (write-byte (logand #xff (ash val -16)) stream)
-  (write-byte (logand #xff (ash val -24)) stream)
+  (loop for sh in '(0 -8 -16 -24)
+     do (write-byte (logand #xff (ash val sh)) stream))
   val)
+
+
+(defun write-float (x stream)
+  (write-u32 (ieee-floats:encode-float32 x) stream))
 
 
 (defun make-varr ()
@@ -78,9 +80,9 @@
 (defun write-plain-floats (bs data start count)
   (dotimes (i count)
     (let ((idx (* 3 (+ start i))))
-      (loop for x in (aref data (+ 0 idx)) do (write-u32 (ieee-floats:encode-float32 x) bs))
-      (loop for x in (aref data (+ 1 idx)) do (write-u32 (ieee-floats:encode-float32 x) bs))
-      (loop for x in (aref data (+ 2 idx)) do (write-u32 (ieee-floats:encode-float32 x) bs))
+      (loop for x in (aref data (+ 0 idx)) do (write-float x bs))
+      (loop for x in (aref data (+ 1 idx)) do (write-float x bs))
+      (loop for x in (aref data (+ 2 idx)) do (write-float x bs))
       (values))))
 
 
