@@ -12,13 +12,11 @@
 
 
 (defun write-u32 (val stream)
-  (loop for sh in '(0 -8 -16 -24)
-     do (write-byte (logand #xff (ash val sh)) stream))
+  (write-byte (logand #xff (ash val 0)) stream)
+  (write-byte (logand #xff (ash val -8)) stream)
+  (write-byte (logand #xff (ash val -16)) stream)
+  (write-byte (logand #xff (ash val -24)) stream)
   val)
-
-
-(defun write-float (x stream)
-  (write-u32 (ieee-floats:encode-float32 x) stream))
 
 
 (defun make-varr ()
@@ -32,18 +30,19 @@
 (defun parse-face (s)
   (let ((face (split-sequence:split-sequence #\Space s)))
     (when (/= 3 (length face))
-      (error "wrong faces configuration, triangles allowed only"))
+      (error "wrong faces configuration"))
     (loop for vertex in face
        collect (loop for idx in (split-sequence:split-sequence #\/ vertex)
-		    collect (parse-integer idx)))))
+		    collect (1- (parse-integer idx))))))
 
 
 (defun emit-face (face arr v vt vn)
   (loop for ($v $vt $vn) in face
-     do (progn
-	  (vpush (aref v (1- $v)) arr)
-	  (vpush (aref vt (1- $vt)) arr)
-	  (vpush (aref vn (1- $vn)) arr))))
+     do (vpush
+	 (list (aref v $v)
+	       (aref vt $vt)
+	       (aref vn $vn))
+	 arr)))
 
 
 (defun read-obj (obj-file)
@@ -79,26 +78,60 @@
 
 (defun write-plain-floats (bs data start count)
   (dotimes (i count)
-    (let ((idx (* 3 (+ start i))))
-      (loop for x in (aref data (+ 0 idx)) do (write-float x bs))
-      (loop for x in (aref data (+ 1 idx)) do (write-float x bs))
-      (loop for x in (aref data (+ 2 idx)) do (write-float x bs))
-      (values))))
+    (let ((vertex (aref data (+ start i))))
+      (loop for vkind in vertex
+	 do (loop for x in vkind do (write-u32 (ieee-floats:encode-float32 x) bs)))))
+  (values))
+    
+
+(defun write-obj (obj-file &key dir (ext ".mesh") (exporter 'write-plain-floats))
+  (flet ((suff (fn) (concatenate 'string fn ext)))
+    (let ((data (read-obj obj-file)))
+      (setf dir (if dir (directory-namestring dir)
+		    (directory-namestring obj-file)))
+      (loop with lst = (car data)
+	 for fn = (pop lst)
+	 for start = (pop lst)
+	 for count = (pop lst)
+	 while fn
+	 do (with-open-file (f (merge-pathnames (suff fn) dir)
+			       :direction :output
+			       :if-exists :overwrite
+			       :if-does-not-exist :create
+			       :element-type 'unsigned-byte)
+	      (funcall exporter f (cdr data) start count))))))
 
 
-(defun write-obj (obj-file &key path (exporter 'write-plain-floats))
+
+;; try out GL_ELEMENT_ARRAY_BUFFER data
+
+(defun %indexed-structure (a start count)
+  (let ((ht (make-hash-table :test 'equal))
+	(idx (make-varr))
+	(out (make-varr)))
+    (loop with n = 0
+       for v across (subseq a start (+ start count))
+       do (multiple-value-bind (i found)
+	      (gethash v ht)
+	    (if found
+		(vpush i idx)
+		(progn
+		  (setf (gethash v ht) n)
+		  (vpush n idx)
+		  (vpush v out)
+		  (incf n)))))
+    (cons idx out)))
+  
+
+(defun %write-obj (obj-file &key path)
   (flet ((mesh (fn) (concatenate 'string fn ".mesh")))
     (let ((data (read-obj obj-file)))
       (setf path (if path (directory-namestring path)
 		     (directory-namestring obj-file)))
       (loop with lst = (car data)
 	 for fn = (pop lst)
-	 for b = (pop lst)
-	 for len = (pop lst)
+	 for start = (pop lst)
+	 for count = (pop lst)
 	 while fn
-	 do (with-open-file (f (merge-pathnames (mesh fn) path)
-			       :direction :output
-			       :if-exists :overwrite
-			       :if-does-not-exist :create
-			       :element-type 'unsigned-byte)
-	      (funcall exporter f (cdr data) b len))))))
+	 collect (%indexed-structure (cdr data) start count)))))
+
