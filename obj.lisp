@@ -5,18 +5,14 @@
 
 
 
-(defun flatten (structure)
-  (cond ((null structure) nil)
-        ((atom structure) `(,structure))
-        (t (mapcan #'flatten structure))))
-
-
 (defun write-u32 (val stream)
-  (write-byte (logand #xff (ash val 0)) stream)
-  (write-byte (logand #xff (ash val -8)) stream)
-  (write-byte (logand #xff (ash val -16)) stream)
-  (write-byte (logand #xff (ash val -24)) stream)
+  (loop for sh in '(0 -8 -16 -24)
+     do (write-byte (logand #xff (ash val sh)) stream))
   val)
+
+
+(defun write-float (x stream)
+  (write-u32 (ieee-floats:encode-float32 x) stream))
 
 
 (defun make-varr ()
@@ -30,19 +26,15 @@
 (defun parse-face (s)
   (let ((face (split-sequence:split-sequence #\Space s)))
     (when (/= 3 (length face))
-      (error "wrong faces configuration"))
+      (error "wrong faces configuration, need triangles"))
     (loop for vertex in face
        collect (loop for idx in (split-sequence:split-sequence #\/ vertex)
-		    collect (1- (parse-integer idx))))))
+               	  collect (1- (parse-integer idx))))))
 
 
 (defun emit-face (face arr v vt vn)
-  (loop for ($v $vt $vn) in face
-     do (vpush
-	 (list (aref v $v)
-	       (aref vt $vt)
-	       (aref vn $vn))
-	 arr)))
+  (loop for (iv ivt ivn) in face
+     do (vpush (list (aref v iv) (aref vt ivt) (aref vn ivn)) arr)))
 
 
 (defun read-obj (obj-file)
@@ -80,7 +72,7 @@
   (dotimes (i count)
     (let ((vertex (aref data (+ start i))))
       (loop for vkind in vertex
-	 do (loop for x in vkind do (write-u32 (ieee-floats:encode-float32 x) bs)))))
+	 do (loop for x in vkind do (write-float x bs)))))
   (values))
     
 
